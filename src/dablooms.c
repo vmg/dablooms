@@ -200,8 +200,8 @@ int bitmap_flush(bitmap_t *bitmap)
  */
 static void new_salts(counting_bloom_t *bloom)
 {
-    const uint32_t root = 0xba01742c;
-    const uint32_t seed = 0xd3702acb;
+    const uint32_t root = 0xba11742c;
+    const uint32_t seed = 0xd5702acb;
 
     int i, num_salts = bloom->nfuncs / 4;
 
