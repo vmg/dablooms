@@ -50,7 +50,7 @@ int test_scale(const char * filepath)
     for (i = 0; fgets(word, 128, fp); i++) {
         if (word != NULL) {
             chomp_line(word);
-            scaling_bloom_add(bloom, word, i);
+            scaling_bloom_add(bloom, word, strlen(word), i);
         }
     }
     
@@ -59,7 +59,7 @@ int test_scale(const char * filepath)
         if (word != NULL) {
             if (iremove % 5 == 0) {
                 chomp_line(word);
-                scaling_bloom_remove(bloom, word, iremove);
+                scaling_bloom_remove(bloom, word, strlen(word), iremove);
             }
         }
     }
@@ -75,13 +75,13 @@ int test_scale(const char * filepath)
         if (word != NULL) {
             chomp_line(word);
             if (i % 5 == 0) {
-                if (!(scaling_bloom_check(bloom, word))) {
+                if (!(scaling_bloom_check(bloom, word, strlen(word)))) {
                     not_exist_pass ++;
                 } else {
                     not_exist_fail ++;
                 }
             } else {
-                if (scaling_bloom_check(bloom, word)) {
+                if (scaling_bloom_check(bloom, word, strlen(word))) {
                     exist_pass ++;
                 } else {
                     fprintf(stderr, "%s\n", word);
