@@ -12,14 +12,14 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "md5.h"
+#include "city.h"
 #include "dablooms.h"
 
 #define DABLOOMS_VERSION "0.8.1"
 
+#define DABLOOMS_HASH64(ptr, len, seed) CityHash64WithSeed(ptr, len, seed)
 #define HEADER_BYTES (2*sizeof(uint32_t))
 #define SCALE_HEADER_BYTES (3*sizeof(uint64_t))
-#define SALT_SIZE 16
 
 const char *dablooms_version(void)
 {
@@ -184,58 +184,41 @@ int bitmap_flush(bitmap_t *bitmap)
     }
 }
 
-/* Each function has a unique salt, so we need at least nfuncs salts.
- * An MD5 hash is 16 bytes long, and each salt only needds to be 4 bytes
- * Thus we can proportion 4 salts per each md5 hash we create as a salt.
- */
-void new_salts(counting_bloom_t *bloom)
+static void new_salts(counting_bloom_t *bloom)
 {
-    int div = bloom->nfuncs / 4;
-    int mod = bloom->nfuncs % 4;
-    int i;
+	const uint64_t root = 0xd32463a2ba01742cLL;
+	const uint64_t seed = 0x4fb95f06d3702acbLL;
+    int i, num_salts = bloom->nfuncs / 2;
     
-    if (mod) {
-        div += 1;
-    }
-    bloom->num_salts = div;
-    bloom->salts = calloc(div, SALT_SIZE);
-    for (i = 0; i < div; i++) {
-        struct cvs_MD5Context context;
-        unsigned char checksum[16];
-        cvs_MD5Init (&context);
-        cvs_MD5Update (&context, (unsigned char *) &i, sizeof(int));
-        cvs_MD5Final (checksum, &context);
-        memcpy(bloom->salts + i * SALT_SIZE, &checksum, SALT_SIZE);
+    if (bloom->nfuncs % 2)
+        num_salts++;
+
+	bloom->salts = calloc(num_salts, sizeof(uint64_t));
+	bloom->salts[0] = DABLOOMS_HASH64((char *)&root, sizeof(uint64_t), seed);
+
+    for (i = 1; i < num_salts; i++) {
+		uint64_t base = bloom->salts[i - 1] ^ i;
+		bloom->salts[i] = DABLOOMS_HASH64((char *)&base, sizeof(uint64_t), seed);
     }
 }
 
-/* We are are using the salts, adding them to the new md5 hash, adding the key,
- * converting said md5 hash to 4 byte indexes
- */
-unsigned int *hash_func(counting_bloom_t *bloom, const char *key, unsigned int *hashes)
+static void hash_func(counting_bloom_t *bloom, const char *key, uint32_t *hashes)
 {
+	size_t key_len = strlen(key);
+	int i, num_salts = bloom->nfuncs / 2;
+	uint64_t *h = (uint64_t *)hashes;
 
-    int i, j, hash_cnt, hash;
-    unsigned char *salts = bloom->salts;
-    hash_cnt = 0;
-    
-    for (i = 0; i < bloom->num_salts; i++) {
-        struct cvs_MD5Context context;
-        unsigned char checksum[16];
-        cvs_MD5Init(&context);
-        cvs_MD5Update(&context, salts + i * SALT_SIZE, SALT_SIZE);
-        cvs_MD5Update(&context, (unsigned char *)key, strlen(key));
-        cvs_MD5Final(checksum, &context);
-        for (j = 0; j < sizeof(checksum); j += 4) {
-            if (hash_cnt >= (bloom->nfuncs)) {
-                break;
-            }
-            hash = *(uint32_t *)(checksum + j);
-            hashes[hash_cnt] = hash % bloom->counts_per_func;
-            hash_cnt++;
-        }
-    }
-    return hashes;
+	for (i = 0; i < num_salts; ++i) {
+		h[i] = DABLOOMS_HASH64(key, key_len, bloom->salts[i]);
+	}
+
+	if (bloom->nfuncs % 2) {
+		uint32_t hash = (uint32_t)DABLOOMS_HASH64(key, key_len, bloom->salts[num_salts]);
+		hashes[bloom->nfuncs - 1] = hash;
+	}
+
+	for (i = 0; i < bloom->nfuncs; ++i)
+		hashes[i] = hashes[i] % bloom->counts_per_func;
 }
 
 int free_counting_bloom(counting_bloom_t *bloom)
