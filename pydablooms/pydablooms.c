@@ -51,7 +51,7 @@ static int Dablooms_init(Dablooms *self, PyObject *args, PyObject *kwds)
 static PyObject *check(Dablooms *self, PyObject *args)
 {
     const char *hash;
-	int len;
+    int len;
 
     if (!PyArg_ParseTuple(args, "s#", &hash, &len)) {
         return NULL;

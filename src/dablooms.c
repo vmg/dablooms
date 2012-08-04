@@ -17,7 +17,6 @@
 
 #define DABLOOMS_VERSION "0.8.1"
 
-#define DABLOOMS_HASH64(ptr, len, seed) CityHash64WithSeed(ptr, len, seed)
 #define HEADER_BYTES (2*sizeof(uint32_t))
 #define SCALE_HEADER_BYTES (3*sizeof(uint64_t))
 
@@ -45,13 +44,13 @@ bitmap_t *bitmap_resize(bitmap_t *bitmap, size_t old_size, size_t new_size)
     
     /* Write something to the end of the file to insure allocated the space */
     if (size == old_size) {
-		if (lseek(fd, new_size, SEEK_SET) < 0 ||
-			ftruncate(fd, (off_t)new_size) < 0) {
-			perror("Error increasing file size with ftruncate");
-			free_bitmap(bitmap);
-			close(fd);
-			return NULL;
-		}
+        if (lseek(fd, new_size, SEEK_SET) < 0 ||
+                ftruncate(fd, (off_t)new_size) < 0) {
+            perror("Error increasing file size with ftruncate");
+            free_bitmap(bitmap);
+            close(fd);
+            return NULL;
+        }
     }
     lseek(fd, 0, SEEK_SET);
     
@@ -201,24 +200,24 @@ int bitmap_flush(bitmap_t *bitmap)
  */
 static void new_salts(counting_bloom_t *bloom)
 {
-	const uint32_t root = 0xba01742c;
-	const uint32_t seed = 0xd3702acb;
+    const uint32_t root = 0xba01742c;
+    const uint32_t seed = 0xd3702acb;
 
     int i, num_salts = bloom->nfuncs / 4;
-    
+
     if (bloom->nfuncs % 4)
         num_salts++;
 
-	bloom->salts = calloc(num_salts, sizeof(uint32_t));
-	bloom->nsalts = num_salts;
+    bloom->salts = calloc(num_salts, sizeof(uint32_t));
+    bloom->nsalts = num_salts;
 
-	/* initial salt, seeded from root */
-	MurmurHash3_x86_32((char *)&root, sizeof(uint32_t), seed, bloom->salts);
+    /* initial salt, seeded from root */
+    MurmurHash3_x86_32((char *)&root, sizeof(uint32_t), seed, bloom->salts);
 
     for (i = 1; i < num_salts; i++) {
-		/* remaining salts are chained on top */
-		uint32_t base = bloom->salts[i - 1] ^ i;
-		MurmurHash3_x86_32((char *)&base, sizeof(uint32_t), seed, bloom->salts + i);
+        /* remaining salts are chained on top */
+        uint32_t base = bloom->salts[i - 1] ^ i;
+        MurmurHash3_x86_32((char *)&base, sizeof(uint32_t), seed, bloom->salts + i);
     }
 }
 
@@ -238,15 +237,15 @@ static void new_salts(counting_bloom_t *bloom)
  */
 static void hash_func(counting_bloom_t *bloom, const char *key, size_t key_len, uint32_t *hashes)
 {
-	int i;
+    int i;
 
-	for (i = 0; i < bloom->nsalts; i++, hashes += 4) {
-		MurmurHash3_x64_128(key, key_len, bloom->salts[i], hashes);
-		hashes[0] = hashes[0] % bloom->counts_per_func;
-		hashes[1] = hashes[1] % bloom->counts_per_func;
-		hashes[2] = hashes[2] % bloom->counts_per_func;
-		hashes[3] = hashes[3] % bloom->counts_per_func;
-	}
+    for (i = 0; i < bloom->nsalts; i++, hashes += 4) {
+        MurmurHash3_x64_128(key, key_len, bloom->salts[i], hashes);
+        hashes[0] = hashes[0] % bloom->counts_per_func;
+        hashes[1] = hashes[1] % bloom->counts_per_func;
+        hashes[2] = hashes[2] % bloom->counts_per_func;
+        hashes[3] = hashes[3] % bloom->counts_per_func;
+    }
 }
 
 int free_counting_bloom(counting_bloom_t *bloom)
@@ -292,8 +291,8 @@ counting_bloom_t *counting_bloom_init(unsigned int capacity, double error_rate,
 
     new_salts(bloom);
 
-	/* hashes; make sure they are always allocated as a multiple of 16
-	 * to skip the overflow check when generating 128-bit hashes */
+    /* hashes; make sure they are always allocated as a multiple of 16
+     * to skip the overflow check when generating 128-bit hashes */
     bloom->hashes = malloc(bloom->nsalts * 16);
     
     return bloom;
