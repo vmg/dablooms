@@ -177,6 +177,28 @@ int bitmap_flush(bitmap_t *bitmap)
     }
 }
 
+/*
+ * Build some sexy new salts for the bloom filter. How?
+ *
+ * With Murmur3_128, we turn a key and a 4-byte salt into a 16 bytes
+ * hash; this hash can be split in four 4-byte hashes, which are
+ * the target size for our bloom filter.
+ *
+ * Hence if we require `nfunc` 4-byte hashes, we need to generate
+ * `nfunc` / 4 different salts (this number in rounded upwards for
+ * the cases where `nfunc` doesn't divide evenly, and we only need
+ * to take 1, 2 or 3 words from the 128-bit hash seeded with the
+ * last salt).
+ *
+ * We build these salts incrementally using Murmur3_32 (4-byte output,
+ * matches our target salt size). The intitial salt is a function
+ * of a predefined root; consequent salts are chained on top of the
+ * first one using the same seed but xor'ed with the salt index.
+ *
+ * Note that this salt generation is stable, i.e. will always remain
+ * the same between different instantiations of a filter. There is
+ * no pure randomness involved.
+ */
 static void new_salts(counting_bloom_t *bloom)
 {
 	const uint32_t root = 0xba01742c;
@@ -190,14 +212,30 @@ static void new_salts(counting_bloom_t *bloom)
 	bloom->salts = calloc(num_salts, sizeof(uint32_t));
 	bloom->nsalts = num_salts;
 
+	/* initial salt, seeded from root */
 	MurmurHash3_x86_32((char *)&root, sizeof(uint32_t), seed, bloom->salts);
 
     for (i = 1; i < num_salts; i++) {
+		/* remaining salts are chained on top */
 		uint32_t base = bloom->salts[i - 1] ^ i;
 		MurmurHash3_x86_32((char *)&base, sizeof(uint32_t), seed, bloom->salts + i);
     }
 }
 
+/*
+ * Perform the actual hashing for `key`
+ *
+ * We get one 128-bit hash for every salt we've previously
+ * allocated. From this 128-bit hash, we get 4 32-bit hashes
+ * with our target size; we need to wrap them around
+ * individually.
+ *
+ * Note that there are no overflow checks for the cases where
+ * we have a non-multiple of 4 number of hashes, because we've
+ * allocated the `hashes` array in 16-byte boundaries. In these
+ * cases, the remaining 1, 2 or 3 hashes will simply not be
+ * accessed.
+ */
 static void hash_func(counting_bloom_t *bloom, const char *key, size_t key_len, uint32_t *hashes)
 {
 	int i;
@@ -253,6 +291,9 @@ counting_bloom_t *counting_bloom_init(unsigned int capacity, double error_rate,
     bloom->num_bytes = (int) ceil(bloom->size / 2 + HEADER_BYTES);
 
     new_salts(bloom);
+
+	/* hashes; make sure they are always allocated as a multiple of 16
+	 * to skip the overflow check when generating 128-bit hashes */
     bloom->hashes = malloc(bloom->nsalts * 16);
     
     return bloom;
