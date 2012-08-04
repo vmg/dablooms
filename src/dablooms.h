@@ -39,6 +39,7 @@ typedef struct {
     uint64_t *salts;
     uint32_t *hashes;
 
+	size_t nsalts;
     size_t nfuncs;
     size_t size;
     size_t num_bytes;

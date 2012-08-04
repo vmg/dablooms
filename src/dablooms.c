@@ -12,7 +12,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "city.h"
+#include "murmur.h"
 #include "dablooms.h"
 
 #define DABLOOMS_VERSION "0.8.1"
@@ -179,38 +179,36 @@ int bitmap_flush(bitmap_t *bitmap)
 
 static void new_salts(counting_bloom_t *bloom)
 {
-	const uint64_t root = 0xd32463a2ba01742cLL;
-	const uint64_t seed = 0x4fb95f06d3702acbLL;
-    int i, num_salts = bloom->nfuncs / 2;
+	const uint32_t root = 0xba01742c;
+	const uint32_t seed = 0xd3702acb;
+
+    int i, num_salts = bloom->nfuncs / 4;
     
-    if (bloom->nfuncs % 2)
+    if (bloom->nfuncs % 4)
         num_salts++;
 
-	bloom->salts = calloc(num_salts, sizeof(uint64_t));
-	bloom->salts[0] = DABLOOMS_HASH64((char *)&root, sizeof(uint64_t), seed);
+	bloom->salts = calloc(num_salts, sizeof(uint32_t));
+	bloom->nsalts = num_salts;
+
+	MurmurHash3_x86_32((char *)&root, sizeof(uint32_t), seed, bloom->salts);
 
     for (i = 1; i < num_salts; i++) {
-		uint64_t base = bloom->salts[i - 1] ^ i;
-		bloom->salts[i] = DABLOOMS_HASH64((char *)&base, sizeof(uint64_t), seed);
+		uint32_t base = bloom->salts[i - 1] ^ i;
+		MurmurHash3_x86_32((char *)&base, sizeof(uint32_t), seed, bloom->salts + i);
     }
 }
 
 static void hash_func(counting_bloom_t *bloom, const char *key, size_t key_len, uint32_t *hashes)
 {
-	int i, num_salts = bloom->nfuncs / 2;
-	uint64_t *h = (uint64_t *)hashes;
+	int i;
 
-	for (i = 0; i < num_salts; ++i) {
-		h[i] = DABLOOMS_HASH64(key, key_len, bloom->salts[i]);
+	for (i = 0; i < bloom->nsalts; i++, hashes += 4) {
+		MurmurHash3_x64_128(key, key_len, bloom->salts[i], hashes);
+		hashes[0] = hashes[0] % bloom->counts_per_func;
+		hashes[1] = hashes[1] % bloom->counts_per_func;
+		hashes[2] = hashes[2] % bloom->counts_per_func;
+		hashes[3] = hashes[3] % bloom->counts_per_func;
 	}
-
-	if (bloom->nfuncs % 2) {
-		uint32_t hash = (uint32_t)DABLOOMS_HASH64(key, key_len, bloom->salts[num_salts]);
-		hashes[bloom->nfuncs - 1] = hash;
-	}
-
-	for (i = 0; i < bloom->nfuncs; ++i)
-		hashes[i] = hashes[i] % bloom->counts_per_func;
 }
 
 int free_counting_bloom(counting_bloom_t *bloom)
@@ -253,8 +251,9 @@ counting_bloom_t *counting_bloom_init(unsigned int capacity, double error_rate,
     bloom->counts_per_func = (int) ceil(capacity * fabs(log(error_rate)) / (bloom->nfuncs * pow(log(2), 2)));
     bloom->size = ceil(bloom->nfuncs * bloom->counts_per_func);
     bloom->num_bytes = (int) ceil(bloom->size / 2 + HEADER_BYTES);
-    bloom->hashes = calloc(bloom->nfuncs, sizeof(unsigned int));
+
     new_salts(bloom);
+    bloom->hashes = malloc(bloom->nsalts * 16);
     
     return bloom;
 }

@@ -59,7 +59,7 @@ PY_MOD_DIR := $(shell $(PYTHON) -c "import distutils.sysconfig ; print(distutils
 PY_FLAGS = --build-lib=$(PY_BLDDIR) --build-temp=$(PY_BLDDIR)
 PY_BLD_ENV = INCPATH="$(SRCDIR) $(INCPATH)" LIBPATH="$(BLDDIR) $(LIBPATH)"
 
-SRCS_LIBDABLOOMS = city.c dablooms.c
+SRCS_LIBDABLOOMS = murmur.c dablooms.c
 SRCS_TESTS = test_dablooms.c
 WORDS = /usr/share/dict/words
 OBJS_LIBDABLOOMS = $(patsubst %.c, $(BLDDIR)/%.o, $(SRCS_LIBDABLOOMS))
