@@ -45,20 +45,13 @@ bitmap_t *bitmap_resize(bitmap_t *bitmap, size_t old_size, size_t new_size)
     
     /* Write something to the end of the file to insure allocated the space */
     if (size == old_size) {
-        for (; size < new_size; size++) {
-            if (lseek(fd, size, SEEK_SET) < 0) {
-                perror("Error, calling lseek() to set file size");
-                free_bitmap(bitmap);
-                close(fd);
-                return NULL;
-            }
-        }
-        if (write(fd, "", 1) < 0) {
-            perror("Error, writing last byte of the file");
-            free_bitmap(bitmap);
-            close(fd);
-            return NULL;
-        }
+		if (lseek(fd, new_size, SEEK_SET) < 0 ||
+			ftruncate(fd, (off_t)new_size) < 0) {
+			perror("Error increasing file size with ftruncate");
+			free_bitmap(bitmap);
+			close(fd);
+			return NULL;
+		}
     }
     lseek(fd, 0, SEEK_SET);
     
